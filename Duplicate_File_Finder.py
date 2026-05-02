@@ -56,7 +56,7 @@ def load_cache(cache_file):
 
 def save_cache(cache_file):
     data = [{"path": p, "mtime": v["mtime"], "hashes": v["hashes"]}
-            for p, v in cache.items() if Path(p).exists()]
+            for p, v in cache.items()]
     cache_file.write_text(json.dumps(data, indent=2))
 
 # ─────────────────────────────────────────────
