@@ -16,9 +16,7 @@ $ErrorActionPreference = "Continue"
 # CONFIG
 # ─────────────────────────────────────────────
 $cacheFile = Join-Path $Path "video_fingerprints.json"
-$temp = Join-Path $env:TEMP "video_fp_temp"
-
-New-Item -ItemType Directory -Force -Path $temp | Out-Null
+$temp = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName())
 
 $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
 if (-not $ffmpeg) {
@@ -26,6 +24,9 @@ if (-not $ffmpeg) {
     exit
 }
 
+New-Item -ItemType Directory -Force -LiteralPath $temp | Out-Null
+
+try {
 # ─────────────────────────────────────────────
 # LOAD CACHE
 # ─────────────────────────────────────────────
@@ -42,7 +43,7 @@ if (Test-Path $cacheFile) {
 # ─────────────────────────────────────────────
 # GET FILES
 # ─────────────────────────────────────────────
-$videos = Get-ChildItem -Path $Path -File -Recurse:$Recurse |
+$videos = Get-ChildItem -LiteralPath $Path -File -Recurse:$Recurse |
 Where-Object { $_.Extension -in ".mp4",".mkv",".avi",".mov",".wmv" }
 
 Write-Host "Found $($videos.Count) videos"
@@ -52,20 +53,25 @@ Write-Host "Found $($videos.Count) videos"
 # ─────────────────────────────────────────────
 function Get-Fingerprint($file) {
 
-    $folder = Join-Path $temp ([IO.Path]::GetFileNameWithoutExtension($file))
-    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    $folder = Join-Path $temp ([IO.Path]::GetRandomFileName())
+    New-Item -ItemType Directory -Force -LiteralPath $folder | Out-Null
 
-    & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+    try {
+        & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
 
-    $hashes = @()
+        $hashes = @()
 
-    Get-ChildItem $folder -Filter *.jpg | ForEach-Object {
-        $hashes += (Get-FileHash $_.FullName -Algorithm MD5).Hash
+        Get-ChildItem -LiteralPath $folder -Filter *.jpg | ForEach-Object {
+            $hashes += (Get-FileHash -LiteralPath $_.FullName -Algorithm MD5).Hash
+        }
+
+        return $hashes
     }
-
-    Remove-Item $folder -Recurse -Force
-
-    return $hashes
+    finally {
+        if (Test-Path -LiteralPath $folder) {
+            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ─────────────────────────────────────────────
@@ -135,11 +141,11 @@ for ($i=0; $i -lt $paths.Count; $i++) {
             $choice = Read-Host "Delete one? (1/2/skip)"
 
             if ($choice -eq "1") {
-                Remove-Item $a -Force
+                Remove-Item -LiteralPath $a -Force
                 Write-Host "Deleted 1" -ForegroundColor Red
             }
             elseif ($choice -eq "2") {
-                Remove-Item $b -Force
+                Remove-Item -LiteralPath $b -Force
                 Write-Host "Deleted 2" -ForegroundColor Red
             }
         }
@@ -147,4 +153,11 @@ for ($i=0; $i -lt $paths.Count; $i++) {
 }
 
 Write-Host "`nDone." -ForegroundColor Green
+}
+finally {
+    if (Test-Path -LiteralPath $temp) {
+        Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Read-Host "Press Enter to exit"
