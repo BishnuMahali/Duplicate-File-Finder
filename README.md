@@ -1,32 +1,29 @@
-# 🎥 Duplicate Video Finder
+# 🎥 Duplicate File Finder
 
-A fast, practical tool to detect **duplicate or near-duplicate videos** using **frame fingerprinting** — available in both **PowerShell (basic)** and **Python (advanced)** versions.
-
-> ⚠️ Currently optimized for **video files only**  
-> 🧠 Future goal: evolve into a **universal duplicate finder (all file types)**
+A fast, practical tool to detect **exact file duplicates (all file types)** and **near-duplicate videos (via frame fingerprinting)** — available in both **Python (advanced GUI/CLI)** and **PowerShell (interactive CLI)** versions.
 
 ---
 
 ## ✨ Features
 
-### 🔰 PowerShell (Basic Version)
-- ✔ Works without Python
-- 🎞 Frame-based fingerprinting using FFmpeg
-- 💾 Smart cache (skips unchanged files)
-- 🗑 Interactive duplicate deletion
-- 📁 Optional recursive scanning
+### 🚀 Python Version (Advanced GUI + CLI)
+- 🖼 **New:** Easy-to-use GUI interface (starts automatically if no arguments are provided).
+- 🖼 **New:** Visual Treeview to inspect duplicates and bulk-delete.
+- 🎯 **New:** Exact match mode for **all file types** (videos, images, documents, audio) using smart size-grouping and hashing.
+- 🗑 **New:** Safe Deletion (moves to Recycle Bin via `send2trash` or permanently deletes).
+- ⚡ Lightning fast video processing with Duration-based grouping.
+- 🎞 Frame fingerprinting (high accuracy) with GPU acceleration support (CUDA / QSV / DXVA2).
+- 💾 Persistent cache with auto-save.
 
 ---
 
-### 🚀 Python (Advanced Version)
-- ⚡ Much faster & smarter pipeline
-- 🎯 Duration-based grouping (huge speed boost)
-- ⚡ Quick binary signature filtering (reduces comparisons)
-- 🎞 Frame fingerprinting (high accuracy)
-- 💾 Persistent cache with auto-save
-- 🧠 GPU acceleration support (CUDA / QSV / DXVA2)
-- 🛑 Safe exit (Ctrl+C saves progress)
-- 🔍 Adjustable similarity threshold
+### 🔰 PowerShell Version (Interactive)
+- ✔ Works without Python.
+- 💬 **New:** Interactive setup prompts at launch (Select Mode, File Types, Deletion type).
+- 🎯 **New:** Exact match mode for **all file types**.
+- ⚡ **New:** Upgraded video matching using `ffprobe` duration grouping for a huge speed boost.
+- 🗑 **New:** Safe Deletion to Recycle Bin.
+- 🎞 Frame-based fingerprinting using FFmpeg.
 
 ---
 
@@ -57,35 +54,39 @@ A fast, practical tool to detect **duplicate or near-duplicate videos** using **
 ### Python Version
 - Python **3.7+**
 - FFmpeg + FFprobe in PATH
+- Install dependencies: `pip install -r requirements.txt`
 
 ---
 
 ## 📦 Usage
 
-### 🟢 PowerShell (Basic)
+### 🟢 PowerShell (Interactive)
 
-Run in current folder:
+Run the script and follow the on-screen prompts:
 ```powershell
 & '.\Duplicate File Finder.ps1'
 ```
 
-### 🚀 Python (Advanced)
+### 🚀 Python (GUI & CLI)
 
-Run in current folder with default settings:
+**Launch the GUI (Settings & Results Treeview):**
 ```bash
 python Duplicate_File_Finder.py
 ```
 
-Run with custom path, recursion, and GPU acceleration:
+**Run purely from the CLI:**
 ```bash
-python Duplicate_File_Finder.py --path "C:\path\to\videos" --recurse --gpu auto --threshold 75.0
+python Duplicate_File_Finder.py --mode exact --file-types images --delete-mode recycle --path "C:\path\to\files"
 ```
 
 Options:
 - `--path PATH` : Folder to scan (default: current directory)
 - `--recurse` : Scan subfolders recursively
-- `--gpu {auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration mode (default: auto)
-- `--threshold THRESHOLD` : Similarity threshold percentage (default: 70.0)
+- `--mode {video,exact}` : Scan mode: video (similar) or exact (identical) (default: video)
+- `--file-types {all,videos,images,documents,audio}` : File types to scan (only used in exact mode)
+- `--delete-mode {permanent,recycle}` : Deletion method
+- `--gpu {auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration for video mode (default: auto)
+- `--threshold THRESHOLD` : Similarity threshold for video mode (default: 70.0)
 
 ---
 
