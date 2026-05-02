@@ -66,7 +66,26 @@ A fast, practical tool to detect **duplicate or near-duplicate videos** using **
 
 Run in current folder:
 ```powershell
-.\DuplicateFileFinder.ps1
+& '.\Duplicate File Finder.ps1'
+```
+
+### 🚀 Python (Advanced)
+
+Run in current folder with default settings:
+```bash
+python Duplicate_File_Finder.py
+```
+
+Run with custom path, recursion, and GPU acceleration:
+```bash
+python Duplicate_File_Finder.py --path "C:\path\to\videos" --recurse --gpu auto --threshold 75.0
+```
+
+Options:
+- `--path PATH` : Folder to scan (default: current directory)
+- `--recurse` : Scan subfolders recursively
+- `--gpu {auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration mode (default: auto)
+- `--threshold THRESHOLD` : Similarity threshold percentage (default: 70.0)
 
 ---
 
