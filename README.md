@@ -66,7 +66,7 @@ A fast, practical tool to detect **duplicate or near-duplicate videos** using **
 
 Run in current folder:
 ```powershell
-.\DuplicateFileFinder.ps1
+.\DuplicateFileFinder.ps1```
 
 ---
 

@@ -20,7 +20,7 @@ from pathlib import Path
 # ─────────────────────────────────────────────
 # 🎬 CONFIG
 # ─────────────────────────────────────────────
-VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"}
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpeg", ".mpg", ".m4v", ".3gp", ".vob", ".ts", ".f4v"}
 FRAME_RATE = "1/10"
 DURATION_TOLERANCE = 5  # seconds
 

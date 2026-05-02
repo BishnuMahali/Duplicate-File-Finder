@@ -44,7 +44,7 @@ if (Test-Path $cacheFile) {
 # GET FILES
 # ─────────────────────────────────────────────
 $videos = Get-ChildItem -LiteralPath $Path -File -Recurse:$Recurse |
-Where-Object { $_.Extension -in ".mp4",".mkv",".avi",".mov",".wmv" }
+Where-Object { $_.Extension -in ".mp4",".mkv",".avi",".mov",".wmv",".flv",".webm",".mpeg",".mpg",".m4v",".3gp",".vob",".ts",".f4v" }
 
 Write-Host "Found $($videos.Count) videos"
 
