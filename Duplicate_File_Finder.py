@@ -1,3 +1,7 @@
+# MIT License
+# Copyright (c) 2026 Bishnu Mahali
+# See LICENSE file in the repository root for full license text.
+
 """
 find_dupes.py — Duplicate video finder with duration grouping + fingerprinting + cache
 """

@@ -1,33 +1,75 @@
-# 🧩 Duplicate File Finder (PowerShell)
+# 🎥 Duplicate Video Finder
 
-A PowerShell-based utility to detect **duplicate or similar files**, starting with video comparison using FFmpeg-based fingerprinting.
+A fast, practical tool to detect **duplicate or near-duplicate videos** using **frame fingerprinting** — available in both **PowerShell (basic)** and **Python (advanced)** versions.
 
-> ⚠️ Currently supports **video files only** (MP4, MKV, AVI, MOV, WMV).  
-Future versions will expand to other file types.
+> ⚠️ Currently optimized for **video files only**  
+> 🧠 Future goal: evolve into a **universal duplicate finder (all file types)**
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
-- 🔍 Detects similar videos (not just exact duplicates)
-- ⚡ Frame-based fingerprinting using FFmpeg
-- 🧠 Smart caching (avoids reprocessing unchanged files)
-- 🗑 Interactive deletion of detected duplicates
+### 🔰 PowerShell (Basic Version)
+- ✔ Works without Python
+- 🎞 Frame-based fingerprinting using FFmpeg
+- 💾 Smart cache (skips unchanged files)
+- 🗑 Interactive duplicate deletion
 - 📁 Optional recursive scanning
+
+---
+
+### 🚀 Python (Advanced Version)
+- ⚡ Much faster & smarter pipeline
+- 🎯 Duration-based grouping (huge speed boost)
+- ⚡ Quick binary signature filtering (reduces comparisons)
+- 🎞 Frame fingerprinting (high accuracy)
+- 💾 Persistent cache with auto-save
+- 🧠 GPU acceleration support (CUDA / QSV / DXVA2)
+- 🛑 Safe exit (Ctrl+C saves progress)
+- 🔍 Adjustable similarity threshold
+
+---
+
+## 🆚 Which Version Should You Use?
+
+| Use Case | Recommended |
+|----------|------------|
+| No Python installed | 🟢 PowerShell |
+| Large video collections | 🚀 Python |
+| Maximum speed & accuracy | 🚀 Python |
+| Simplicity | 🟢 PowerShell |
 
 ---
 
 ## ⚙️ Requirements
 
-- PowerShell 5.1+
-- FFmpeg installed and available in PATH
+### Common
+- 🎬 FFmpeg (required for both versions)  
+  https://ffmpeg.org/download.html
 
-Download FFmpeg: https://ffmpeg.org/download.html
+---
+
+### PowerShell Version
+- Windows PowerShell **5.1+**
+
+---
+
+### Python Version
+- Python **3.7+**
+- FFmpeg + FFprobe in PATH
 
 ---
 
 ## 📦 Usage
 
-### Run in current folder
+### 🟢 PowerShell (Basic)
+
+Run in current folder:
 ```powershell
 .\DuplicateFileFinder.ps1
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License — see the LICENSE file for details.
