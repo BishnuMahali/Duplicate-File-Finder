@@ -8,27 +8,29 @@ A fast, practical tool to detect **exact file duplicates (all file types)** and 
 
 ### 🚀 Python Version (Advanced GUI + CLI)
 - 🖼 **New:** Easy-to-use GUI interface (starts automatically if no arguments are provided).
-- 🖼 **New:** Visual Treeview to inspect duplicates and bulk-delete.
-- 🎯 **New:** Exact match mode for **all file types** (videos, images, documents, audio) using smart size-grouping and hashing.
-- 🗑 **New:** Safe Deletion (moves to Recycle Bin via `send2trash` or permanently deletes).
-- ⚡ Lightning fast video processing with Duration-based grouping and Visual Quick Filters.
-- 🎞 **New:** Perceptual Hashing (aHash) perfectly detects re-encoded, compressed, or resized videos.
-- 🎛 **New:** Granular Performance Filters: Individually toggle Duration Grouping, Quick Signatures, and High FPS extraction.
-- ⚙️ **New:** Adjustable similarity threshold via GUI or CLI.
+- 🖱 **New:** **GUI Auto-Select Tool:** Instantly select files for bulk-deletion by picking the "Keep Largest", "Keep Smallest", "Keep Newest", or "Keep Oldest" file within a match group.
+- 🎯 **Two Distinct Search Modes:**
+  - **Identical Files (Exact Mode):** Uses size-grouping and strict hashing to instantly find 100% identical files of *any* type (videos, images, docs).
+  - **Similar Videos (Video Mode):** Uses mathematical Perceptual Hashing (aHash) to ignore compression artifacts and find videos that *look* the same, even if they have been resized or re-encoded.
+- 🕸 **New:** **Transitive Graph Grouping:** Connected Components algorithm completely eliminates the annoyance of redundant/repeating pairs in your results list.
+- 🎛 **New:** Granular Performance Filters: Individually toggle Duration Grouping, Visual Quick Signatures, and High FPS extraction depending on your accuracy vs. speed needs.
+- ⚙️ **New:** Adjustable visual similarity threshold via GUI or CLI.
 - 🚀 Interactive GPU acceleration support (CUDA / QSV / DXVA2) with automatic CPU fallback.
 - 💾 Persistent cache with robust per-file auto-save (safe against Ctrl+C / crashes).
+- 🗑 **New:** Graceful Safe Deletion (moves to Recycle Bin via `send2trash` if installed, falls back securely to permanent delete if missing).
 
 ---
 
 ### 🔰 PowerShell Version (Interactive)
-- ✔ Works without Python.
-- 💬 **New:** Interactive setup prompts at launch (Select Mode, File Types, Deletion type).
-- 🎯 **New:** Exact match mode for **all file types**.
+- ✔ Works entirely native without Python.
+- 💬 **New:** Interactive setup prompts at launch explicitly guiding you between "Similar Videos" and "Identical Files" modes.
+- 🕸 **New:** **Transitive Graph Grouping:** Eliminates duplicate result pairs and allows for easy comma-separated bulk-deletion from the CLI interface.
+- 🎯 **Exact Match Mode** for all file types.
 - ⚡ Upgraded video matching using `ffprobe` duration grouping and Visual Quick Filters.
-- 🎞 **New:** Perceptual Hashing (aHash) for finding resized/re-encoded videos.
+- 🎞 **New:** Perceptual Hashing (aHash) via raw binary extraction for finding resized/re-encoded videos.
 - 🎛 **New:** Granular Performance Filters and configurable match threshold.
-- 🚀 **New:** Interactive GPU acceleration (CUDA, QSV, D3D11VA) with CPU fallback.
-- 🗑 Safe Deletion to Recycle Bin.
+- 🚀 **New:** Interactive GPU acceleration (CUDA, QSV, D3D11VA) using the call operator for robust space-handling and CPU fallback.
+- 🗑 Safe Deletion to Recycle Bin via native `.NET` methods.
 
 ---
 
@@ -63,38 +65,69 @@ A fast, practical tool to detect **exact file duplicates (all file types)** and 
 
 ---
 
-## 📦 Usage
+## 📖 Tutorial & Guide
 
-### 🟢 PowerShell (Interactive)
+### 🟢 Using the PowerShell Version (Interactive)
 
-Run the script and follow the on-screen prompts:
+The PowerShell script is incredibly easy to use. Open your PowerShell terminal, navigate to the folder containing the script, and simply run it:
 ```powershell
 & '.\Duplicate File Finder.ps1'
 ```
 
-### 🚀 Python (GUI & CLI)
+The script will launch an interactive menu that guides you through the process:
+1. **Select Mode:** Choose between `1` for Similar Videos (which finds re-encoded videos using visual hashing) or `2` for Identical Files (which instantly finds exact matches using file size/hashes).
+2. **Performance Filters (Video Mode only):** The script will ask you if you want to group by duration, use quick signatures, and extract more frames. If you suspect your videos are heavily edited (different lengths), say `N` to the duration grouping.
+3. **Hardware Acceleration:** If you are running Video Mode, it will prompt you to select your GPU (NVIDIA, Intel, AMD). If you aren't sure, select `1` for Auto.
+4. **Results & Deletion:** Once the scan is complete, it groups connected duplicates together. It will prompt you with the paths of the duplicates. You can type the numbers separated by commas (e.g., `1,3`) to instantly delete those files.
 
-**Launch the GUI (Settings & Results Treeview):**
+### 🚀 Using the Python Version (GUI)
+
+The Python version comes with a fully-featured Graphical User Interface. To launch it, simply run the script without any arguments:
+
 ```bash
 python Duplicate_File_Finder.py
 ```
 
-**Run purely from the CLI:**
+#### GUI Workflow:
+1. **Select Path:** Click `Browse` to select the target directory. Check the box if you want to scan subdirectories recursively.
+2. **Select Mode:** Choose `Similar Videos` or `Identical Files`.
+3. **Configure Filters:** If using `Similar Videos`, you can adjust the similarity threshold and toggle the granular performance filters (see the **CLI Flags** table below for an explanation of what each filter does).
+4. **Auto-Select Deletion:** Once the scan completes, a Treeview window opens listing your duplicate groups. Use the **Auto-Select** buttons at the bottom:
+   - `Keep Largest (Delete Smaller)`: Automatically unchecks the highest quality/largest file in a group and checks the smaller/compressed versions for deletion.
+   - `Keep Newest (Delete Older)`: Perfect for keeping recently edited files.
+   - *You can still manually override selections by double-clicking a file or pressing the Spacebar.*
+5. **Delete Selected:** Click the button to safely move the checked files to your Recycle Bin.
+
+---
+
+### 💻 Command Line Interface (CLI)
+
+The Python script can also be run headlessly (without the GUI) for automation or scripting.
+
+**Example 1: Quickly finding duplicate pictures**
 ```bash
-python Duplicate_File_Finder.py --mode exact --file-types images --delete-mode recycle --path "C:\path\to\files"
+python Duplicate_File_Finder.py --mode exact --file-types images --path "C:\Photos"
 ```
 
-Options:
-- `--path PATH` : Folder to scan (default: current directory)
-- `--recurse` : Scan subfolders recursively
-- `--mode {video,exact}` : Scan mode: video (similar) or exact (identical) (default: video)
-- `--file-types {all,videos,images,documents,audio}` : File types to scan (only used in exact mode)
-- `--delete-mode {permanent,recycle}` : Deletion method
-- `--gpu {prompt,auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration for video mode (default: prompt)
-- `--threshold THRESHOLD` : Similarity threshold for video mode (default: 70.0)
-- `--skip-duration-filter` : Skips duration grouping to find edited/cut videos (slower).
-- `--skip-quick-signatures` : Skips the 100% exact keyframe check.
-- `--extract-more-frames` : Extracts 1 frame every 5s instead of 10s for higher accuracy on re-encodes.
+**Example 2: Finding heavily edited, chopped-up video clips**
+*(We skip the duration filter so videos of different lengths are compared, and lower the threshold to 50%)*
+```bash
+python Duplicate_File_Finder.py --mode video --skip-duration-filter --threshold 50 --path "C:\Videos"
+```
+
+#### Available CLI Flags
+
+| Flag | Description | When to use it |
+|------|-------------|----------------|
+| `--path <PATH>` | The target folder to scan. | Always required for CLI use. |
+| `--recurse` | Scans all sub-folders within the target path. | When organizing entire root drives. |
+| `--mode <exact\|video>` | `exact` finds 100% identical files. `video` uses perceptual hashing to find visually similar videos. | Default is `video`. |
+| `--file-types <type>` | If using `exact` mode, restricts the scan to `all`, `videos`, `images`, `documents`, or `audio`. | When you only care about duplicate photos, for example. |
+| `--gpu <type>` | Hardware acceleration: `auto`, `cpu`, `cuda`, `qsv`, `dxva2`. | `auto` is generally best. Use `cuda` for NVIDIA. |
+| `--threshold <float>` | Match percentage for videos (Default: `70.0`). | Lower it to `50.0` if a video has a heavy watermark or color grade. |
+| `--skip-duration-filter`| Checks EVERY video against EVERY video, ignoring length differences. | Use this if you have videos that have been **trimmed or cut**. (Warning: Very slow on large folders). |
+| `--skip-quick-signatures`| Disables the instant 3-keyframe visual match shortcut. | Use only if you suspect the quick filter is causing false positives. |
+| `--extract-more-frames` | Extracts 1 frame every 5 seconds (instead of 10s). | Gives higher accuracy for comparing re-encoded videos, but doubles processing time. |
 
 ---
 

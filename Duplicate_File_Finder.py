@@ -56,10 +56,13 @@ def load_cache(cache_file):
         try:
             data = json.loads(cache_file.read_text())
             for e in data:
+                # Ensure the cache doesn't contain legacy string (MD5) hashes
+                if e["hashes"] and isinstance(e["hashes"][0], str):
+                    raise ValueError("Legacy cache format detected")
                 cache[e["path"]] = {"mtime": e["mtime"], "hashes": e["hashes"]}
             print(f"💾 Cache loaded: {len(cache)} entries")
         except Exception:
-            print("⚠ Cache corrupted, starting fresh")
+            print("⚠ Legacy or corrupted cache detected. Starting fresh.")
             cache = {}
 
 def save_cache(cache_file):
@@ -423,6 +426,7 @@ def gui_settings():
         "skip_duration_filter": False,
         "skip_quick_signatures": False,
         "extract_more_frames": False,
+        "gpu": "auto",
         "start": False
     }
 
@@ -446,8 +450,9 @@ def gui_settings():
     ttk.Checkbutton(opts_frame, text="Recursive Scan", variable=recurse_var).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
     ttk.Label(opts_frame, text="Mode:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-    mode_var = tk.StringVar(value=config["mode"])
-    mode_cb = ttk.Combobox(opts_frame, textvariable=mode_var, values=["video", "exact"], state="readonly", width=10)
+    # Using readable names in the GUI, mapping them internally later
+    mode_var = tk.StringVar(value="Similar Videos" if config["mode"] == "video" else "Identical Files")
+    mode_cb = ttk.Combobox(opts_frame, textvariable=mode_var, values=["Similar Videos", "Identical Files"], state="readonly", width=20)
     mode_cb.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
     lbl_ftypes = ttk.Label(opts_frame, text="Exact Types:")
@@ -474,7 +479,7 @@ def gui_settings():
     ttk.Checkbutton(opts_frame, text="Extract More Frames (1fps/5s for higher accuracy)", variable=ext_frames_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
 
     def update_ui(*args):
-        if mode_var.get() == "video":
+        if mode_var.get() == "Similar Videos":
             cb_ftypes.grid_remove()
             lbl_ftypes.grid_remove()
         else:
@@ -487,7 +492,7 @@ def gui_settings():
     def on_start():
         config["path"] = path_var.get()
         config["recurse"] = recurse_var.get()
-        config["mode"] = mode_var.get()
+        config["mode"] = "video" if mode_var.get() == "Similar Videos" else "exact"
         config["file_types"] = types_var.get()
         config["delete_mode"] = del_var.get()
         config["skip_duration_filter"] = skip_dur_var.get()
