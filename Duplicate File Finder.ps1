@@ -72,7 +72,7 @@ if (-not $ffprobe) {
     exit
 }
 
-New-Item -ItemType Directory -Force -LiteralPath $temp | Out-Null
+[System.IO.Directory]::CreateDirectory($temp) | Out-Null
 
 try {
 # ─────────────────────────────────────────────
@@ -299,7 +299,7 @@ if ($videos.Count -eq 0) {
 function Get-Fingerprint($file) {
 
     $folder = Join-Path $temp ([IO.Path]::GetRandomFileName())
-    New-Item -ItemType Directory -Force -LiteralPath $folder | Out-Null
+    [System.IO.Directory]::CreateDirectory($folder) | Out-Null
 
     try {
         & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
