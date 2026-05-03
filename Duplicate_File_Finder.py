@@ -56,10 +56,13 @@ def load_cache(cache_file):
         try:
             data = json.loads(cache_file.read_text())
             for e in data:
+                # Ensure the cache doesn't contain legacy string (MD5) hashes
+                if e["hashes"] and isinstance(e["hashes"][0], str):
+                    raise ValueError("Legacy cache format detected")
                 cache[e["path"]] = {"mtime": e["mtime"], "hashes": e["hashes"]}
             print(f"💾 Cache loaded: {len(cache)} entries")
         except Exception:
-            print("⚠ Cache corrupted, starting fresh")
+            print("⚠ Legacy or corrupted cache detected. Starting fresh.")
             cache = {}
 
 def save_cache(cache_file):
@@ -301,7 +304,10 @@ def show_results_gui(matches, delete_callback):
 
     # Populate
     row_to_path = {}
+    group_to_items = {}
+
     for i, group in enumerate(matches, 1):
+        group_items = []
         for f in group:
             try:
                 p = Path(f)
@@ -312,10 +318,14 @@ def show_results_gui(matches, delete_callback):
             # Default to not checked (unchecked box character)
             item = tree.insert("", "end", values=(str(f), size_mb, f"Group {i}"), tags=("unchecked",))
             row_to_path[item] = str(f)
+            group_items.append(item)
+
+        group_to_items[i] = group_items
 
     # Toggle selection on click
-    def toggle_check(event):
-        item = tree.focus()
+    def toggle_check(event=None, item=None):
+        if not item:
+            item = tree.focus()
         if not item: return
         tags = tree.item(item, "tags")
         if "checked" in tags:
@@ -327,6 +337,49 @@ def show_results_gui(matches, delete_callback):
 
     tree.bind("<Double-1>", toggle_check)
     tree.bind("<space>", toggle_check)
+
+    # Auto-Select Features
+    def auto_select(strategy):
+        # First, clear all selections
+        for item in tree.get_children():
+            tree.item(item, tags=("unchecked",))
+            tree.item(item, text="[ ]")
+
+        for g_id, items in group_to_items.items():
+            if not items: continue
+
+            # Extract data for sorting
+            data = []
+            for item in items:
+                p = Path(row_to_path[item])
+                try:
+                    stat = p.stat()
+                    data.append({"item": item, "size": stat.st_size, "mtime": stat.st_mtime})
+                except:
+                    data.append({"item": item, "size": 0, "mtime": 0})
+
+            # Sort to find the "best" one to keep
+            if strategy == "largest":
+                data.sort(key=lambda x: x["size"], reverse=True)
+            elif strategy == "smallest":
+                data.sort(key=lambda x: x["size"])
+            elif strategy == "newest":
+                data.sort(key=lambda x: x["mtime"], reverse=True)
+            elif strategy == "oldest":
+                data.sort(key=lambda x: x["mtime"])
+
+            # Keep the first one, mark the rest for deletion
+            for d in data[1:]:
+                tree.item(d["item"], tags=("checked",))
+                tree.item(d["item"], text="[X]")
+
+    auto_frame = ttk.LabelFrame(root, text="Auto-Select for Deletion")
+    auto_frame.pack(fill="x", padx=10, pady=5)
+
+    ttk.Button(auto_frame, text="Keep Largest (Delete Smaller)", command=lambda: auto_select("largest")).pack(side="left", padx=5, pady=5)
+    ttk.Button(auto_frame, text="Keep Smallest (Delete Larger)", command=lambda: auto_select("smallest")).pack(side="left", padx=5, pady=5)
+    ttk.Button(auto_frame, text="Keep Newest (Delete Older)", command=lambda: auto_select("newest")).pack(side="left", padx=5, pady=5)
+    ttk.Button(auto_frame, text="Keep Oldest (Delete Newer)", command=lambda: auto_select("oldest")).pack(side="left", padx=5, pady=5)
 
     btn_frame = ttk.Frame(root)
     btn_frame.pack(fill="x", padx=10, pady=10)
@@ -373,6 +426,7 @@ def gui_settings():
         "skip_duration_filter": False,
         "skip_quick_signatures": False,
         "extract_more_frames": False,
+        "gpu": "auto",
         "start": False
     }
 
@@ -396,8 +450,9 @@ def gui_settings():
     ttk.Checkbutton(opts_frame, text="Recursive Scan", variable=recurse_var).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
     ttk.Label(opts_frame, text="Mode:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-    mode_var = tk.StringVar(value=config["mode"])
-    mode_cb = ttk.Combobox(opts_frame, textvariable=mode_var, values=["video", "exact"], state="readonly", width=10)
+    # Using readable names in the GUI, mapping them internally later
+    mode_var = tk.StringVar(value="Similar Videos" if config["mode"] == "video" else "Identical Files")
+    mode_cb = ttk.Combobox(opts_frame, textvariable=mode_var, values=["Similar Videos", "Identical Files"], state="readonly", width=20)
     mode_cb.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
     lbl_ftypes = ttk.Label(opts_frame, text="Exact Types:")
@@ -424,7 +479,7 @@ def gui_settings():
     ttk.Checkbutton(opts_frame, text="Extract More Frames (1fps/5s for higher accuracy)", variable=ext_frames_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
 
     def update_ui(*args):
-        if mode_var.get() == "video":
+        if mode_var.get() == "Similar Videos":
             cb_ftypes.grid_remove()
             lbl_ftypes.grid_remove()
         else:
@@ -437,7 +492,7 @@ def gui_settings():
     def on_start():
         config["path"] = path_var.get()
         config["recurse"] = recurse_var.get()
-        config["mode"] = mode_var.get()
+        config["mode"] = "video" if mode_var.get() == "Similar Videos" else "exact"
         config["file_types"] = types_var.get()
         config["delete_mode"] = del_var.get()
         config["skip_duration_filter"] = skip_dur_var.get()
@@ -629,7 +684,8 @@ def main():
 
     print("\n🔍 Comparing videos...\n")
     paths = list(fingerprints.keys())
-    match_groups = []
+
+    edges = []
 
     def hamming_distance(h1, h2):
         x = h1 ^ h2
@@ -643,44 +699,65 @@ def main():
     for i in range(len(paths)):
         for j in range(i + 1, len(paths)):
             a, b = paths[i], paths[j]
+            matched = False
 
             # 1. Visual Quick Filter Check
             if not getattr(args, "skip_quick_signatures", False):
                 qa = quick_sigs[a]
                 qb = quick_sigs[b]
                 if qa and qb:
-                    # If the exact same 3 keyframes exist, it's a guaranteed match (100% same)
                     if qa == qb:
-                        match_groups.append([Path(a), Path(b)])
-                        continue
+                        matched = True
 
             # 2. Full Perceptual Hash Comparison
-            list_a = fingerprints[a]
-            list_b = fingerprints[b]
-            if not list_a or not list_b:
-                continue
+            if not matched:
+                list_a = fingerprints[a]
+                list_b = fingerprints[b]
+                if list_a and list_b:
+                    smaller = min(len(list_a), len(list_b))
+                    if smaller > 0:
+                        match_count = 0
+                        for ha in list_a:
+                            for hb in list_b:
+                                if hamming_distance(ha, hb) <= 10:
+                                    match_count += 1
+                                    break
 
-            smaller = min(len(list_a), len(list_b))
-            if smaller == 0:
-                continue
+                        percent = (match_count / smaller) * 100
+                        if percent >= threshold:
+                            matched = True
 
-            # Count how many frames match (Hamming distance <= 10 out of 64 bits allows minor compression differences)
-            match_count = 0
-            # To handle slight synchronization offsets, we check if a frame in A has a match anywhere in B
-            # This is O(N^2) per pair, but N is small (usually 10-60 frames)
-            for ha in list_a:
-                for hb in list_b:
-                    if hamming_distance(ha, hb) <= 10:
-                        match_count += 1
-                        break
-
-            percent = (match_count / smaller) * 100
-            if percent >= threshold:
-                match_groups.append([Path(a), Path(b)])
+            if matched:
+                edges.append((a, b))
 
     save_cache(cache_file)
+
+    # 3. Build Connected Components (Group transitive matches)
+    from collections import defaultdict
+    adj = defaultdict(list)
+    for u, v in edges:
+        adj[u].append(v)
+        adj[v].append(u)
+
+    visited = set()
+    match_groups = []
+    for node in adj:
+        if node not in visited:
+            group = []
+            stack = [node]
+            visited.add(node)
+            while stack:
+                curr = stack.pop()
+                group.append(Path(curr))
+                for neighbor in adj[curr]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+            if len(group) > 1:
+                match_groups.append(group)
+
     print("═" * 60)
-    print(f"✅ Done — {len(match_groups)} match group(s) found")
+    print(f"✅ Done — {len(match_groups)} connected match group(s) found")
     print("═" * 60)
 
     if len(sys.argv) == 1:
