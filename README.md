@@ -11,9 +11,12 @@ A fast, practical tool to detect **exact file duplicates (all file types)** and 
 - 🖼 **New:** Visual Treeview to inspect duplicates and bulk-delete.
 - 🎯 **New:** Exact match mode for **all file types** (videos, images, documents, audio) using smart size-grouping and hashing.
 - 🗑 **New:** Safe Deletion (moves to Recycle Bin via `send2trash` or permanently deletes).
-- ⚡ Lightning fast video processing with Duration-based grouping.
-- 🎞 Frame fingerprinting (high accuracy) with GPU acceleration support (CUDA / QSV / DXVA2).
-- 💾 Persistent cache with auto-save.
+- ⚡ Lightning fast video processing with Duration-based grouping and Visual Quick Filters.
+- 🎞 **New:** Perceptual Hashing (aHash) perfectly detects re-encoded, compressed, or resized videos.
+- 🎛 **New:** Granular Performance Filters: Individually toggle Duration Grouping, Quick Signatures, and High FPS extraction.
+- ⚙️ **New:** Adjustable similarity threshold via GUI or CLI.
+- 🚀 Interactive GPU acceleration support (CUDA / QSV / DXVA2) with automatic CPU fallback.
+- 💾 Persistent cache with robust per-file auto-save (safe against Ctrl+C / crashes).
 
 ---
 
@@ -21,9 +24,11 @@ A fast, practical tool to detect **exact file duplicates (all file types)** and 
 - ✔ Works without Python.
 - 💬 **New:** Interactive setup prompts at launch (Select Mode, File Types, Deletion type).
 - 🎯 **New:** Exact match mode for **all file types**.
-- ⚡ **New:** Upgraded video matching using `ffprobe` duration grouping for a huge speed boost.
-- 🗑 **New:** Safe Deletion to Recycle Bin.
-- 🎞 Frame-based fingerprinting using FFmpeg.
+- ⚡ Upgraded video matching using `ffprobe` duration grouping and Visual Quick Filters.
+- 🎞 **New:** Perceptual Hashing (aHash) for finding resized/re-encoded videos.
+- 🎛 **New:** Granular Performance Filters and configurable match threshold.
+- 🚀 **New:** Interactive GPU acceleration (CUDA, QSV, D3D11VA) with CPU fallback.
+- 🗑 Safe Deletion to Recycle Bin.
 
 ---
 
@@ -85,8 +90,11 @@ Options:
 - `--mode {video,exact}` : Scan mode: video (similar) or exact (identical) (default: video)
 - `--file-types {all,videos,images,documents,audio}` : File types to scan (only used in exact mode)
 - `--delete-mode {permanent,recycle}` : Deletion method
-- `--gpu {auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration for video mode (default: auto)
+- `--gpu {prompt,auto,cpu,cuda,qsv,dxva2}` : Hardware acceleration for video mode (default: prompt)
 - `--threshold THRESHOLD` : Similarity threshold for video mode (default: 70.0)
+- `--skip-duration-filter` : Skips duration grouping to find edited/cut videos (slower).
+- `--skip-quick-signatures` : Skips the 100% exact keyframe check.
+- `--extract-more-frames` : Extracts 1 frame every 5s instead of 10s for higher accuracy on re-encodes.
 
 ---
 

@@ -18,7 +18,12 @@ import tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from send2trash import send2trash
+
+try:
+    from send2trash import send2trash
+    HAS_SEND2TRASH = True
+except ImportError:
+    HAS_SEND2TRASH = False
 
 # ─────────────────────────────────────────────
 # 🎬 CONFIG
@@ -74,11 +79,15 @@ def delete_files(paths, delete_mode):
                 continue
 
             if delete_mode == "recycle":
-                try:
-                    send2trash(str(p_obj.resolve()))
-                except Exception as e:
-                    print(f"❌ Recycle bin failed for {p}: {e}")
-                    continue
+                if HAS_SEND2TRASH:
+                    try:
+                        send2trash(str(p_obj.resolve()))
+                    except Exception as e:
+                        print(f"❌ Recycle bin failed for {p}: {e}")
+                        continue
+                else:
+                    print(f"⚠ send2trash module missing, falling back to permanent delete for {p}")
+                    p_obj.unlink()
             else:
                 p_obj.unlink()
             deleted += 1
@@ -124,6 +133,14 @@ def quick_signature(path, chunk_size=1024*1024):
         return (size, hashlib.md5(start + end).hexdigest())
     except Exception:
         return None
+
+def get_visual_quick_signature(hashes):
+    if not hashes:
+        return None
+    if len(hashes) < 3:
+        return tuple(hashes)
+    mid = len(hashes) // 2
+    return (hashes[0], hashes[mid], hashes[-1])
 
 # ─────────────────────────────────────────────
 # 🔍 EXACT MATCH ENGINE
@@ -211,25 +228,44 @@ def get_duration(path):
 # ─────────────────────────────────────────────
 # 🎞 FINGERPRINT
 # ─────────────────────────────────────────────
-def fingerprint(file_path, ffmpeg_bin, hw_args):
-    tmp_dir = Path(tempfile.mkdtemp())
-    try:
-        cmd = hw_args + [
-            "-i", str(file_path),
-            "-vf", f"fps={FRAME_RATE}",
-            str(tmp_dir / "frame_%04d.jpg"),
-            "-loglevel", "error"
-        ]
+def fingerprint(file_path, ffmpeg_bin, hw_args, extreme=False):
+    fps = "1/5" if extreme else "1/10"
 
-        subprocess.run([ffmpeg_bin] + cmd)
+    try:
+        def run_ffmpeg(args):
+            cmd = args + [
+                "-i", str(file_path),
+                "-vf", f"fps={fps},scale=8:8,format=gray",
+                "-f", "rawvideo",
+                "pipe:1",
+                "-loglevel", "error"
+            ]
+            result = subprocess.run([ffmpeg_bin] + cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return result.stdout
+
+        try:
+            raw_data = run_ffmpeg(hw_args)
+        except subprocess.CalledProcessError as e:
+            if hw_args:
+                print(f"⚠ GPU acceleration failed for {file_path.name}, falling back to CPU...")
+                raw_data = run_ffmpeg([])
+            else:
+                raise
 
         hashes = []
-        for f in sorted(tmp_dir.glob("*.jpg")):
-            hashes.append(hashlib.md5(f.read_bytes()).hexdigest())
+        # Each 8x8 frame is exactly 64 bytes
+        for i in range(0, len(raw_data), 64):
+            frame_data = raw_data[i:i+64]
+            if len(frame_data) == 64:
+                mean = sum(frame_data) / 64
+                bits = "".join("1" if b >= mean else "0" for b in frame_data)
+                hashes.append(int(bits, 2))
+
         return hashes
 
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception as e:
+        print(f"❌ Failed to extract frames from {file_path.name}: {e}")
+        return []
 
 # ─────────────────────────────────────────────
 # 🖼 GUI RESULTS
@@ -334,6 +370,9 @@ def gui_settings():
         "file_types": "videos",
         "delete_mode": "recycle",
         "threshold": 70.0,
+        "skip_duration_filter": False,
+        "skip_quick_signatures": False,
+        "extract_more_frames": False,
         "start": False
     }
 
@@ -358,15 +397,42 @@ def gui_settings():
 
     ttk.Label(opts_frame, text="Mode:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
     mode_var = tk.StringVar(value=config["mode"])
-    ttk.Combobox(opts_frame, textvariable=mode_var, values=["video", "exact"], state="readonly").grid(row=1, column=1, sticky="w", padx=5, pady=5)
+    mode_cb = ttk.Combobox(opts_frame, textvariable=mode_var, values=["video", "exact"], state="readonly", width=10)
+    mode_cb.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-    ttk.Label(opts_frame, text="File Types:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+    lbl_ftypes = ttk.Label(opts_frame, text="Exact Types:")
+    lbl_ftypes.grid(row=1, column=2, sticky="w", padx=5, pady=5)
     types_var = tk.StringVar(value=config["file_types"])
-    ttk.Combobox(opts_frame, textvariable=types_var, values=["all", "videos", "images", "documents", "audio"], state="readonly").grid(row=2, column=1, sticky="w", padx=5, pady=5)
+    cb_ftypes = ttk.Combobox(opts_frame, textvariable=types_var, values=["all", "videos", "images", "documents", "audio"], state="readonly", width=10)
+    cb_ftypes.grid(row=1, column=3, sticky="w", padx=5, pady=5)
 
-    ttk.Label(opts_frame, text="Delete:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+    ttk.Label(opts_frame, text="Delete:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
     del_var = tk.StringVar(value=config["delete_mode"])
-    ttk.Combobox(opts_frame, textvariable=del_var, values=["recycle", "permanent"], state="readonly").grid(row=3, column=1, sticky="w", padx=5, pady=5)
+    ttk.Combobox(opts_frame, textvariable=del_var, values=["recycle", "permanent"], state="readonly", width=10).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+    ttk.Label(opts_frame, text="Threshold (%):").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+    thresh_var = tk.StringVar(value=str(config["threshold"]))
+    ttk.Entry(opts_frame, textvariable=thresh_var, width=10).grid(row=2, column=3, sticky="w", padx=5, pady=5)
+
+    skip_dur_var = tk.BooleanVar(value=config["skip_duration_filter"])
+    ttk.Checkbutton(opts_frame, text="Skip Duration Filter (Finds edited lengths)", variable=skip_dur_var).grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+
+    skip_sig_var = tk.BooleanVar(value=config["skip_quick_signatures"])
+    ttk.Checkbutton(opts_frame, text="Skip Quick Visual Sigs", variable=skip_sig_var).grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+
+    ext_frames_var = tk.BooleanVar(value=config["extract_more_frames"])
+    ttk.Checkbutton(opts_frame, text="Extract More Frames (1fps/5s for higher accuracy)", variable=ext_frames_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+
+    def update_ui(*args):
+        if mode_var.get() == "video":
+            cb_ftypes.grid_remove()
+            lbl_ftypes.grid_remove()
+        else:
+            cb_ftypes.grid()
+            lbl_ftypes.grid()
+
+    mode_var.trace_add("write", update_ui)
+    update_ui()
 
     def on_start():
         config["path"] = path_var.get()
@@ -374,6 +440,13 @@ def gui_settings():
         config["mode"] = mode_var.get()
         config["file_types"] = types_var.get()
         config["delete_mode"] = del_var.get()
+        config["skip_duration_filter"] = skip_dur_var.get()
+        config["skip_quick_signatures"] = skip_sig_var.get()
+        config["extract_more_frames"] = ext_frames_var.get()
+        try:
+            config["threshold"] = float(thresh_var.get())
+        except ValueError:
+            pass
         config["start"] = True
         root.destroy()
 
@@ -405,9 +478,26 @@ def main():
         parser.add_argument("--mode", choices=["video", "exact"], default="video", help="Scan mode: video (similar) or exact (identical)")
         parser.add_argument("--file-types", choices=["all", "videos", "images", "documents", "audio"], default="videos", help="File types to scan (only used in exact mode)")
         parser.add_argument("--delete-mode", choices=["permanent", "recycle"], default="recycle", help="Deletion method")
-        parser.add_argument("--gpu", default="auto", choices=["auto","cpu","cuda","qsv","dxva2"], help="Hardware acceleration for video mode")
+        parser.add_argument("--gpu", default="prompt", choices=["prompt","auto","cpu","cuda","qsv","dxva2"], help="Hardware acceleration for video mode")
         parser.add_argument("--threshold", type=float, default=70.0, help="Similarity threshold for video mode")
+        parser.add_argument("--skip-duration-filter", action="store_true", help="Skips duration filtering to find edited lengths")
+        parser.add_argument("--skip-quick-signatures", action="store_true", help="Skips the fast visual quick signature match")
+        parser.add_argument("--extract-more-frames", action="store_true", help="Extracts 1fps/5s instead of 10s for higher accuracy on re-encodes")
         args = parser.parse_args()
+
+    # Prompt for GPU mode if in video mode and we want to prompt
+    # Note: If running via GUI, args.gpu is set to "auto" earlier, bypassing this prompt unless explicitly set to "prompt"
+    if args.mode == "video" and getattr(args, "gpu", "auto") == "prompt":
+        print("\nSelect hardware acceleration mode:")
+        print("1) Auto (Detect automatically, fallback to CPU)")
+        print("2) NVIDIA (CUDA)")
+        print("3) Intel (QSV)")
+        print("4) AMD/Windows (D3D11VA)")
+        print("5) CPU Only (None)")
+        choice = input("Enter choice [1-5] (default 1): ").strip()
+
+        mapping = {"1": "auto", "2": "cuda", "3": "qsv", "4": "dxva2", "5": "cpu", "": "auto"}
+        args.gpu = mapping.get(choice, "auto")
 
     scan_path = Path(args.path if args.path else ".").resolve()
     cache_file = scan_path / "video_fingerprints.json"
@@ -420,8 +510,13 @@ def main():
     print(f"🔁 Recursive  : {'Yes' if args.recurse else 'No'}")
 
     if args.mode == "video":
-        print(f"🎯 Threshold  : {threshold}%")
-        print(f"⏱ Tolerance  : ±{DURATION_TOLERANCE}s")
+        print(f"🎯 Threshold    : {threshold}%")
+        if getattr(args, "skip_duration_filter", False):
+            print("⏱ Duration Grp : SKIPPED")
+        else:
+            print(f"⏱ Duration Grp : Active (±{DURATION_TOLERANCE}s)")
+        print(f"⚡ Quick Sigs   : {'SKIPPED' if getattr(args, 'skip_quick_signatures', False) else 'Active'}")
+        print(f"🎞 Frame Rate   : {'1/5s' if getattr(args, 'extract_more_frames', False) else '1/10s'}")
     else:
         print(f"📂 File Types : {args.file_types}")
 
@@ -434,7 +529,7 @@ def main():
             print("❌ ffmpeg not found")
             sys.exit(1)
 
-        hw_args = resolve_gpu(args.gpu)
+        hw_args = resolve_gpu("auto" if getattr(args, "gpu", "auto") == "prompt" else args.gpu)
         print(f"🚀 Acceleration: {' '.join(hw_args) if hw_args else 'CPU only'}")
 
         load_cache(cache_file)
@@ -479,86 +574,107 @@ def main():
     videos = find_files(scan_path, args.recurse, VIDEO_EXTENSIONS)
     print(f"📦 Found {len(videos)} video(s)")
 
-    print("\n⏱ Grouping by duration...")
-    groups = []
-    for v in videos:
-        d = get_duration(v)
-        if d is None:
-            continue
+    if getattr(args, "skip_duration_filter", False):
+        print("\n⏭ Skipping duration filtering (Checking all videos against each other)...")
+    else:
+        print("\n⏱ Grouping by duration...")
+        groups = []
+        for v in videos:
+            d = get_duration(v)
+            if d is None:
+                continue
 
-        placed = False
-        for g in groups:
-            if abs(g["duration"] - d) <= DURATION_TOLERANCE:
-                g["files"].append(v)
-                placed = True
-                break
-        if not placed:
-            groups.append({"duration": d, "files": [v]})
+            placed = False
+            for g in groups:
+                if abs(g["duration"] - d) <= DURATION_TOLERANCE:
+                    g["files"].append(v)
+                    placed = True
+                    break
+            if not placed:
+                groups.append({"duration": d, "files": [v]})
 
-    videos = [f for g in groups if len(g["files"]) > 1 for f in g["files"]]
-    print(f"🎯 After duration filter: {len(videos)} candidate(s)")
+        videos = [f for g in groups if len(g["files"]) > 1 for f in g["files"]]
+        print(f"🎯 After duration filter: {len(videos)} candidate(s)")
 
     if not videos:
-        print("❌ No possible duplicates after duration filtering")
+        print("❌ No possible duplicates to process.")
         sys.exit()
-
-    print("\n⚡ Running quick signature filter...")
-    sig_map = {}
-    filtered = []
-    for v in videos:
-        sig = quick_signature(v)
-        if not sig:
-            continue
-        if sig in sig_map:
-            filtered.append(v)
-            filtered.append(sig_map[sig])
-        else:
-            sig_map[sig] = v
-
-    videos = list(set(filtered)) if filtered else videos
-    print(f"🎯 After quick filter: {len(videos)}")
 
     print("\n⚙ Processing videos...\n")
     fingerprints = {}
-    for i, v in enumerate(videos, 1):
-        path = str(v)
-        mtime = str(v.stat().st_mtime)
-        print(f"[{i}/{len(videos)}] 🎬 {v.name}")
-        if path in cache and cache[path]["mtime"] == mtime:
-            fingerprints[path] = cache[path]["hashes"]
-            print("   ✔ Cached\n")
-            continue
-        print("   ⚙ Extracting fingerprint...")
-        h = fingerprint(v, ffmpeg_bin, hw_args)
-        if h:
-            fingerprints[path] = h
-            cache[path] = {"mtime": mtime, "hashes": h}
-            save_cache(cache_file)
-        print()
+    try:
+        for i, v in enumerate(videos, 1):
+            path = str(v)
+            mtime = str(v.stat().st_mtime)
+            print(f"[{i}/{len(videos)}] 🎬 {v.name}")
+            if path in cache and cache[path]["mtime"] == mtime:
+                fingerprints[path] = cache[path]["hashes"]
+                print("   ✔ Cached\n")
+                continue
+            print("   ⚙ Extracting fingerprint...")
+            h = fingerprint(v, ffmpeg_bin, hw_args, getattr(args, "extract_more_frames", False))
+            if h:
+                fingerprints[path] = h
+                cache[path] = {"mtime": mtime, "hashes": h}
+                save_cache(cache_file)
+            print()
+    except KeyboardInterrupt:
+        print("\n⚠ Interrupted — saving cache...")
+        save_cache(cache_file)
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ Error during processing: {e}")
+        save_cache(cache_file)
+        raise
 
     print("\n🔍 Comparing videos...\n")
     paths = list(fingerprints.keys())
     match_groups = []
 
-    # Simple pairing for video matches to mimic groups
+    def hamming_distance(h1, h2):
+        x = h1 ^ h2
+        return bin(x).count('1')
+
+    # Visual Quick Filter Pre-Computation
+    quick_sigs = {}
+    for p in paths:
+        quick_sigs[p] = get_visual_quick_signature(fingerprints[p])
+
     for i in range(len(paths)):
         for j in range(i + 1, len(paths)):
             a, b = paths[i], paths[j]
-            set_a = set(fingerprints[a])
-            set_b = set(fingerprints[b])
-            if not set_a or not set_b:
+
+            # 1. Visual Quick Filter Check
+            if not getattr(args, "skip_quick_signatures", False):
+                qa = quick_sigs[a]
+                qb = quick_sigs[b]
+                if qa and qb:
+                    # If the exact same 3 keyframes exist, it's a guaranteed match (100% same)
+                    if qa == qb:
+                        match_groups.append([Path(a), Path(b)])
+                        continue
+
+            # 2. Full Perceptual Hash Comparison
+            list_a = fingerprints[a]
+            list_b = fingerprints[b]
+            if not list_a or not list_b:
                 continue
-            smaller = min(len(set_a), len(set_b))
+
+            smaller = min(len(list_a), len(list_b))
             if smaller == 0:
                 continue
-            needed = threshold / 100 * smaller
-            common = 0
-            for h in set_a:
-                if h in set_b:
-                    common += 1
-                    if common >= needed:
+
+            # Count how many frames match (Hamming distance <= 10 out of 64 bits allows minor compression differences)
+            match_count = 0
+            # To handle slight synchronization offsets, we check if a frame in A has a match anywhere in B
+            # This is O(N^2) per pair, but N is small (usually 10-60 frames)
+            for ha in list_a:
+                for hb in list_b:
+                    if hamming_distance(ha, hb) <= 10:
+                        match_count += 1
                         break
-            percent = (common / smaller) * 100
+
+            percent = (match_count / smaller) * 100
             if percent >= threshold:
                 match_groups.append([Path(a), Path(b)])
 
