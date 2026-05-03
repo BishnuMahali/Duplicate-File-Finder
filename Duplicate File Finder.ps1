@@ -10,7 +10,11 @@ param(
     [string]$Mode = "prompt",
     [string]$FileTypes = "videos",
     [string]$DeleteMode = "recycle",
-    [string]$HardwareAccel = "prompt"
+    [string]$HardwareAccel = "prompt",
+    [int]$Threshold = 70,
+    [switch]$SkipDurationFilter,
+    [switch]$SkipQuickSignatures,
+    [switch]$ExtractMoreFrames
 )
 
 Set-StrictMode -Version 2
@@ -24,7 +28,7 @@ if ($Mode -eq "prompt") {
     Write-Host "        DUPLICATE FILE FINDER" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
 
-    $ModeChoice = Read-Host "Select Mode (1 = Video/Similar, 2 = Exact/All files) [1]"
+        $ModeChoice = Read-Host "Select Mode (1 = Similar Videos [Finds re-encodes], 2 = Identical Files [Fast, Exact Size]) [1]"
     if ($ModeChoice -eq "2") {
         $Mode = "exact"
 
@@ -45,6 +49,22 @@ if ($Mode -eq "prompt") {
         }
     } else {
         $Mode = "video"
+    }
+
+    if ($Mode -eq "video") {
+        $DurChoice = Read-Host "`nGroup by Duration? (Fast, but misses edited lengths) (Y/N) [Y]"
+        if ($DurChoice -eq "N" -or $DurChoice -eq "n") { $SkipDurationFilter = $true }
+
+        $SigChoice = Read-Host "`nUse Quick Visual Signatures? (Fast, instantly matches identical keyframes) (Y/N) [Y]"
+        if ($SigChoice -eq "N" -or $SigChoice -eq "n") { $SkipQuickSignatures = $true }
+
+        $FrameChoice = Read-Host "`nExtract More Frames? (Slower, higher accuracy for re-encodes) (Y/N) [N]"
+        if ($FrameChoice -eq "Y" -or $FrameChoice -eq "y") { $ExtractMoreFrames = $true }
+
+        $ThreshChoice = Read-Host "`nEnter Match Threshold percentage [70]"
+        if (-not [string]::IsNullOrWhiteSpace($ThreshChoice)) {
+            $Threshold = [int]$ThreshChoice
+        }
     }
 
     if ($Mode -eq "video" -and $HardwareAccel -eq "prompt") {
@@ -289,39 +309,44 @@ function Get-VideoDuration($file) {
     }
 }
 
-Write-Host "Grouping by duration..." -ForegroundColor Cyan
-$groups = @()
-foreach ($v in $videos) {
-    $d = Get-VideoDuration $v.FullName
-    if ($null -eq $d) { continue }
+if ($SkipDurationFilter) {
+    Write-Host "`n⏭ Skipping duration filtering (Checking all videos against each other)..." -ForegroundColor Yellow
+} else {
+    Write-Host "`nGrouping by duration..." -ForegroundColor Cyan
+    $groups = @()
+    foreach ($v in $videos) {
+        $d = Get-VideoDuration $v.FullName
+        if ($null -eq $d) { continue }
 
-    $placed = $false
+        $placed = $false
+        foreach ($g in $groups) {
+            if ([Math]::Abs($g.Duration - $d) -le 5) {
+                $g.Files += $v
+                $placed = $true
+                break
+            }
+        }
+        if (-not $placed) {
+            $groups += @{
+                Duration = $d
+                Files = @($v)
+            }
+        }
+    }
+
+    $videos = @()
     foreach ($g in $groups) {
-        if ([Math]::Abs($g.Duration - $d) -le 5) {
-            $g.Files += $v
-            $placed = $true
-            break
+        if ($g.Files.Count -gt 1) {
+            $videos += $g.Files
         }
     }
-    if (-not $placed) {
-        $groups += @{
-            Duration = $d
-            Files = @($v)
-        }
-    }
-}
 
-$videos = @()
-foreach ($g in $groups) {
-    if ($g.Files.Count -gt 1) {
-        $videos += $g.Files
-    }
+    Write-Host "Candidate videos after duration filter: $($videos.Count)" -ForegroundColor Yellow
 }
-
-Write-Host "Candidate videos after duration filter: $($videos.Count)" -ForegroundColor Yellow
 
 if ($videos.Count -eq 0) {
-    Write-Host "❌ No possible video duplicates after duration filtering" -ForegroundColor Green
+    Write-Host "❌ No possible video duplicates to process." -ForegroundColor Green
+    exit
 }
 
 # ─────────────────────────────────────────────
@@ -329,22 +354,23 @@ if ($videos.Count -eq 0) {
 # ─────────────────────────────────────────────
 function Get-Fingerprint($file) {
 
-    $folder = Join-Path $temp ([IO.Path]::GetRandomFileName())
-    [System.IO.Directory]::CreateDirectory($folder) | Out-Null
+    $fps = if ($ExtractMoreFrames) { "1/5" } else { "1/10" }
 
     try {
+        $outFile = Join-Path $temp ([System.IO.Path]::GetRandomFileName() + ".raw")
+
         if ($hwArgs.Count -gt 0) {
-            & $ffmpeg $hwArgs[0] $hwArgs[1] -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+            & $ffmpeg $hwArgs[0] $hwArgs[1] -i "$file" -vf "fps=$fps,scale=8:8,format=gray" -f rawvideo $outFile -hide_banner -loglevel error
         } else {
-            & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+            & $ffmpeg -i "$file" -vf "fps=$fps,scale=8:8,format=gray" -f rawvideo $outFile -hide_banner -loglevel error
         }
 
         if ($LASTEXITCODE -ne 0) {
             if ($hwArgs.Count -gt 0) {
                 Write-Host "⚠ GPU acceleration failed for $(Split-Path $file -Leaf), falling back to CPU..." -ForegroundColor Yellow
-                Get-ChildItem -LiteralPath $folder -Filter *.jpg | Remove-Item -Force
+                if (Test-Path -LiteralPath $outFile) { Remove-Item -LiteralPath $outFile -Force }
 
-                & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+                & $ffmpeg -i "$file" -vf "fps=$fps,scale=8:8,format=gray" -f rawvideo $outFile -hide_banner -loglevel error
                 if ($LASTEXITCODE -ne 0) {
                     Write-Host "❌ Failed to extract frames from $(Split-Path $file -Leaf)" -ForegroundColor Red
                     return @()
@@ -357,17 +383,53 @@ function Get-Fingerprint($file) {
 
         $hashes = @()
 
-        Get-ChildItem -LiteralPath $folder -Filter *.jpg | ForEach-Object {
-            $hashes += (Get-FileHash -LiteralPath $_.FullName -Algorithm MD5).Hash
+        if (Test-Path -LiteralPath $outFile) {
+            $bytes = [System.IO.File]::ReadAllBytes($outFile)
+            for ($i = 0; $i -lt $bytes.Length; $i += 64) {
+                if ($i + 64 -le $bytes.Length) {
+                    $sum = 0
+                    for ($j = 0; $j -lt 64; $j++) {
+                        $sum += $bytes[$i + $j]
+                    }
+                    $mean = $sum / 64
+
+                    $bits = ""
+                    for ($j = 0; $j -lt 64; $j++) {
+                        if ($bytes[$i + $j] -ge $mean) {
+                            $bits += "1"
+                        } else {
+                            $bits += "0"
+                        }
+                    }
+                    $hashes += [Convert]::ToUInt64($bits, 2)
+                }
+            }
         }
 
         return $hashes
     }
     finally {
-        if (Test-Path -LiteralPath $folder) {
-            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $outFile) {
+            Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+function Get-VisualQuickSignature($hashes) {
+    if (-not $hashes -or $hashes.Count -eq 0) { return $null }
+    if ($hashes.Count -lt 3) { return ($hashes -join ",") }
+    $mid = [Math]::Floor($hashes.Count / 2)
+    return "$($hashes[0]),$($hashes[$mid]),$($hashes[-1])"
+}
+
+function Get-HammingDistance([uint64]$h1, [uint64]$h2) {
+    [uint64]$x = $h1 -bxor $h2
+    $count = 0
+    while ($x -gt 0) {
+        $count += ($x -band 1)
+        $x = $x -shr 1
+    }
+    return $count
 }
 
 # ─────────────────────────────────────────────
@@ -419,7 +481,13 @@ Write-Host "Cache saved → $cacheFile" -ForegroundColor Cyan
 # ─────────────────────────────────────────────
 # COMPARE
 # ─────────────────────────────────────────────
-$paths = $fingerprints.Keys
+$paths = @($fingerprints.Keys)
+
+# Pre-compute Visual Quick Signatures
+$quickSigs = @{}
+foreach ($p in $paths) {
+    $quickSigs[$p] = Get-VisualQuickSignature $fingerprints[$p]
+}
 
 for ($i=0; $i -lt $paths.Count; $i++) {
     for ($j=$i+1; $j -lt $paths.Count; $j++) {
@@ -427,16 +495,58 @@ for ($i=0; $i -lt $paths.Count; $i++) {
         $a = $paths[$i]
         $b = $paths[$j]
 
-        $hashA = $fingerprints[$a]
-        $hashB = $fingerprints[$b]
+        # 1. Visual Quick Filter
+        if (-not $SkipQuickSignatures) {
+            $qa = $quickSigs[$a]
+            $qb = $quickSigs[$b]
+            if ($null -ne $qa -and $null -ne $qb -and $qa -eq $qb) {
+                Write-Host "`n============================" -ForegroundColor Yellow
+                Write-Host "MATCH (100% via Quick Visual Filter)" -ForegroundColor Yellow
+                Write-Host "1. $a"
+                Write-Host "2. $b"
 
-        if (-not $hashA -or -not $hashB) { continue }
+                $del = Read-Host "`nDelete which one? (1/2 or enter to skip)"
 
-        $matches = ($hashA | Where-Object { $hashB -contains $_ }).Count
+                if ($del -eq "1" -or $del -eq "2") {
+                    $delPath = if ($del -eq "1") { $a } else { $b }
+                    try {
+                        if ($DeleteMode -eq "recycle") {
+                            Add-Type -AssemblyName Microsoft.VisualBasic
+                            [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($delPath, 'OnlyErrorDialogs', 'SendToRecycleBin')
+                        } else {
+                            Remove-Item -LiteralPath $delPath -Force
+                        }
+                        Write-Host "Deleted choice $del" -ForegroundColor Red
+                    } catch {
+                        Write-Host "❌ Failed to delete: $_" -ForegroundColor Red
+                    }
+                }
+                continue
+            }
+        }
 
-        $percent = ($matches / [Math]::Min($hashA.Count, $hashB.Count)) * 100
+        # 2. Full Perceptual Comparison
+        $listA = $fingerprints[$a]
+        $listB = $fingerprints[$b]
 
-        if ($percent -ge 70) {
+        if (-not $listA -or -not $listB) { continue }
+
+        $smaller = [Math]::Min($listA.Count, $listB.Count)
+        if ($smaller -eq 0) { continue }
+
+        $matches = 0
+        foreach ($ha in $listA) {
+            foreach ($hb in $listB) {
+                if ((Get-HammingDistance $ha $hb) -le 10) {
+                    $matches++
+                    break
+                }
+            }
+        }
+
+        $percent = ($matches / $smaller) * 100
+
+        if ($percent -ge $Threshold) {
 
             Write-Host "`n============================" -ForegroundColor Yellow
             Write-Host "MATCH ($([int]$percent)% similar)" -ForegroundColor Yellow
