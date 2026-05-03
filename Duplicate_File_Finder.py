@@ -18,7 +18,12 @@ import tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from send2trash import send2trash
+
+try:
+    from send2trash import send2trash
+    HAS_SEND2TRASH = True
+except ImportError:
+    HAS_SEND2TRASH = False
 
 # ─────────────────────────────────────────────
 # 🎬 CONFIG
@@ -74,11 +79,15 @@ def delete_files(paths, delete_mode):
                 continue
 
             if delete_mode == "recycle":
-                try:
-                    send2trash(str(p_obj.resolve()))
-                except Exception as e:
-                    print(f"❌ Recycle bin failed for {p}: {e}")
-                    continue
+                if HAS_SEND2TRASH:
+                    try:
+                        send2trash(str(p_obj.resolve()))
+                    except Exception as e:
+                        print(f"❌ Recycle bin failed for {p}: {e}")
+                        continue
+                else:
+                    print(f"⚠ send2trash module missing, falling back to permanent delete for {p}")
+                    p_obj.unlink()
             else:
                 p_obj.unlink()
             deleted += 1
@@ -214,20 +223,36 @@ def get_duration(path):
 def fingerprint(file_path, ffmpeg_bin, hw_args):
     tmp_dir = Path(tempfile.mkdtemp())
     try:
-        cmd = hw_args + [
-            "-i", str(file_path),
-            "-vf", f"fps={FRAME_RATE}",
-            str(tmp_dir / "frame_%04d.jpg"),
-            "-loglevel", "error"
-        ]
+        def run_ffmpeg(args):
+            cmd = args + [
+                "-i", str(file_path),
+                "-vf", f"fps={FRAME_RATE}",
+                str(tmp_dir / "frame_%04d.jpg"),
+                "-loglevel", "error"
+            ]
+            # Use check=True so it raises CalledProcessError on failure
+            subprocess.run([ffmpeg_bin] + cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        subprocess.run([ffmpeg_bin] + cmd)
+        try:
+            run_ffmpeg(hw_args)
+        except subprocess.CalledProcessError as e:
+            if hw_args:
+                print(f"⚠ GPU acceleration failed for {file_path.name}, falling back to CPU...")
+                # Cleanup partial frames from failed GPU run
+                for f in tmp_dir.glob("*.jpg"):
+                    f.unlink()
+                run_ffmpeg([])
+            else:
+                raise
 
         hashes = []
         for f in sorted(tmp_dir.glob("*.jpg")):
             hashes.append(hashlib.md5(f.read_bytes()).hexdigest())
         return hashes
 
+    except Exception as e:
+        print(f"❌ Failed to extract frames from {file_path.name}: {e}")
+        return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -405,9 +430,23 @@ def main():
         parser.add_argument("--mode", choices=["video", "exact"], default="video", help="Scan mode: video (similar) or exact (identical)")
         parser.add_argument("--file-types", choices=["all", "videos", "images", "documents", "audio"], default="videos", help="File types to scan (only used in exact mode)")
         parser.add_argument("--delete-mode", choices=["permanent", "recycle"], default="recycle", help="Deletion method")
-        parser.add_argument("--gpu", default="auto", choices=["auto","cpu","cuda","qsv","dxva2"], help="Hardware acceleration for video mode")
+        parser.add_argument("--gpu", default="prompt", choices=["prompt","auto","cpu","cuda","qsv","dxva2"], help="Hardware acceleration for video mode")
         parser.add_argument("--threshold", type=float, default=70.0, help="Similarity threshold for video mode")
         args = parser.parse_args()
+
+    # Prompt for GPU mode if in video mode and we want to prompt
+    # Note: If running via GUI, args.gpu is set to "auto" earlier, bypassing this prompt unless explicitly set to "prompt"
+    if args.mode == "video" and getattr(args, "gpu", "auto") == "prompt":
+        print("\nSelect hardware acceleration mode:")
+        print("1) Auto (Detect automatically, fallback to CPU)")
+        print("2) NVIDIA (CUDA)")
+        print("3) Intel (QSV)")
+        print("4) AMD/Windows (D3D11VA)")
+        print("5) CPU Only (None)")
+        choice = input("Enter choice [1-5] (default 1): ").strip()
+
+        mapping = {"1": "auto", "2": "cuda", "3": "qsv", "4": "dxva2", "5": "cpu", "": "auto"}
+        args.gpu = mapping.get(choice, "auto")
 
     scan_path = Path(args.path if args.path else ".").resolve()
     cache_file = scan_path / "video_fingerprints.json"
@@ -434,7 +473,7 @@ def main():
             print("❌ ffmpeg not found")
             sys.exit(1)
 
-        hw_args = resolve_gpu(args.gpu)
+        hw_args = resolve_gpu("auto" if getattr(args, "gpu", "auto") == "prompt" else args.gpu)
         print(f"🚀 Acceleration: {' '.join(hw_args) if hw_args else 'CPU only'}")
 
         load_cache(cache_file)
@@ -520,21 +559,30 @@ def main():
 
     print("\n⚙ Processing videos...\n")
     fingerprints = {}
-    for i, v in enumerate(videos, 1):
-        path = str(v)
-        mtime = str(v.stat().st_mtime)
-        print(f"[{i}/{len(videos)}] 🎬 {v.name}")
-        if path in cache and cache[path]["mtime"] == mtime:
-            fingerprints[path] = cache[path]["hashes"]
-            print("   ✔ Cached\n")
-            continue
-        print("   ⚙ Extracting fingerprint...")
-        h = fingerprint(v, ffmpeg_bin, hw_args)
-        if h:
-            fingerprints[path] = h
-            cache[path] = {"mtime": mtime, "hashes": h}
-            save_cache(cache_file)
-        print()
+    try:
+        for i, v in enumerate(videos, 1):
+            path = str(v)
+            mtime = str(v.stat().st_mtime)
+            print(f"[{i}/{len(videos)}] 🎬 {v.name}")
+            if path in cache and cache[path]["mtime"] == mtime:
+                fingerprints[path] = cache[path]["hashes"]
+                print("   ✔ Cached\n")
+                continue
+            print("   ⚙ Extracting fingerprint...")
+            h = fingerprint(v, ffmpeg_bin, hw_args)
+            if h:
+                fingerprints[path] = h
+                cache[path] = {"mtime": mtime, "hashes": h}
+                save_cache(cache_file)
+            print()
+    except KeyboardInterrupt:
+        print("\n⚠ Interrupted — saving cache...")
+        save_cache(cache_file)
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ Error during processing: {e}")
+        save_cache(cache_file)
+        raise
 
     print("\n🔍 Comparing videos...\n")
     paths = list(fingerprints.keys())

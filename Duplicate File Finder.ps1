@@ -9,7 +9,8 @@ param(
     [switch]$Recurse,
     [string]$Mode = "prompt",
     [string]$FileTypes = "videos",
-    [string]$DeleteMode = "recycle"
+    [string]$DeleteMode = "recycle",
+    [string]$HardwareAccel = "prompt"
 )
 
 Set-StrictMode -Version 2
@@ -46,6 +47,24 @@ if ($Mode -eq "prompt") {
         $Mode = "video"
     }
 
+    if ($Mode -eq "video" -and $HardwareAccel -eq "prompt") {
+        Write-Host "`nSelect hardware acceleration mode:"
+        Write-Host "1. Auto (Detect automatically, fallback to CPU)"
+        Write-Host "2. NVIDIA (CUDA)"
+        Write-Host "3. Intel (QSV)"
+        Write-Host "4. AMD/Windows (D3D11VA)"
+        Write-Host "5. CPU Only (None)"
+        $AccelChoice = Read-Host "[1]"
+
+        switch ($AccelChoice) {
+            "2" { $HardwareAccel = "cuda" }
+            "3" { $HardwareAccel = "qsv" }
+            "4" { $HardwareAccel = "d3d11va" }
+            "5" { $HardwareAccel = "cpu" }
+            default { $HardwareAccel = "auto" }
+        }
+    }
+
     $DelChoice = Read-Host "`nSelect Delete Mode (1 = Recycle Bin, 2 = Permanent) [1]"
     if ($DelChoice -eq "2") {
         $DeleteMode = "permanent"
@@ -70,6 +89,18 @@ $ffprobe = (Get-Command ffprobe -ErrorAction SilentlyContinue).Source
 if (-not $ffprobe) {
     Write-Host "❌ ffprobe not found! (Needed for duration grouping)" -ForegroundColor Red
     exit
+}
+
+$hwArgs = @()
+if ($HardwareAccel -ne "cpu" -and $HardwareAccel -ne "prompt") {
+    if ($HardwareAccel -eq "auto") {
+        if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+            Write-Host "⚡ GPU detected → CUDA" -ForegroundColor Cyan
+            $hwArgs = @("-hwaccel", "cuda")
+        }
+    } else {
+        $hwArgs = @("-hwaccel", $HardwareAccel)
+    }
 }
 
 [System.IO.Directory]::CreateDirectory($temp) | Out-Null
@@ -302,7 +333,27 @@ function Get-Fingerprint($file) {
     [System.IO.Directory]::CreateDirectory($folder) | Out-Null
 
     try {
-        & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+        if ($hwArgs.Count -gt 0) {
+            & $ffmpeg $hwArgs[0] $hwArgs[1] -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+        } else {
+            & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            if ($hwArgs.Count -gt 0) {
+                Write-Host "⚠ GPU acceleration failed for $(Split-Path $file -Leaf), falling back to CPU..." -ForegroundColor Yellow
+                Get-ChildItem -LiteralPath $folder -Filter *.jpg | Remove-Item -Force
+
+                & $ffmpeg -i "$file" -vf "fps=1/10" "$folder\frame_%04d.jpg" -hide_banner -loglevel error
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "❌ Failed to extract frames from $(Split-Path $file -Leaf)" -ForegroundColor Red
+                    return @()
+                }
+            } else {
+                Write-Host "❌ Failed to extract frames from $(Split-Path $file -Leaf)" -ForegroundColor Red
+                return @()
+            }
+        }
 
         $hashes = @()
 
@@ -324,32 +375,42 @@ function Get-Fingerprint($file) {
 # ─────────────────────────────────────────────
 $fingerprints = @{}
 
-foreach ($v in $videos) {
+try {
+    foreach ($v in $videos) {
 
-    $path = $v.FullName
-    $lastWrite = $v.LastWriteTimeUtc
+        $path = $v.FullName
+        $lastWrite = $v.LastWriteTimeUtc
 
-    if ($cache.ContainsKey($path) -and $cache[$path].LastWriteTime -eq $lastWrite) {
-        Write-Host "✔ Cached: $($v.Name)" -ForegroundColor Green
-        $fingerprints[$path] = $cache[$path].Hashes
-    }
-    else {
-        Write-Host "Processing: $($v.Name)" -ForegroundColor Yellow
+        if ($cache.ContainsKey($path) -and $cache[$path].LastWriteTime -eq $lastWrite) {
+            Write-Host "✔ Cached: $($v.Name)" -ForegroundColor Green
+            $fingerprints[$path] = $cache[$path].Hashes
+        }
+        else {
+            Write-Host "Processing: $($v.Name)" -ForegroundColor Yellow
 
-        $hashes = Get-Fingerprint $path
+            $hashes = Get-Fingerprint $path
+            if ($hashes.Count -gt 0) {
+                $fingerprints[$path] = $hashes
 
-        $fingerprints[$path] = $hashes
+                $cache[$path] = @{
+                    Path = $path
+                    LastWriteTime = $lastWrite
+                    Hashes = $hashes
+                }
 
-        $cache[$path] = @{
-            Path = $path
-            LastWriteTime = $lastWrite
-            Hashes = $hashes
+                # Save Cache immediately
+                $cache.Values | ConvertTo-Json -Depth 5 | Set-Content $cacheFile
+            }
         }
     }
+} catch {
+    Write-Host "`n⚠ Error occurred, saving cache..." -ForegroundColor Yellow
+    $cache.Values | ConvertTo-Json -Depth 5 | Set-Content $cacheFile
+    throw
 }
 
 # ─────────────────────────────────────────────
-# SAVE CACHE
+# SAVE CACHE (Final safety net)
 # ─────────────────────────────────────────────
 $cache.Values | ConvertTo-Json -Depth 5 | Set-Content $cacheFile
 
