@@ -489,78 +489,116 @@ foreach ($p in $paths) {
     $quickSigs[$p] = Get-VisualQuickSignature $fingerprints[$p]
 }
 
+$edges = @()
+
 for ($i=0; $i -lt $paths.Count; $i++) {
     for ($j=$i+1; $j -lt $paths.Count; $j++) {
 
         $a = $paths[$i]
         $b = $paths[$j]
+        $matched = $false
 
         # 1. Visual Quick Filter
         if (-not $SkipQuickSignatures) {
             $qa = $quickSigs[$a]
             $qb = $quickSigs[$b]
             if ($null -ne $qa -and $null -ne $qb -and $qa -eq $qb) {
-                Write-Host "`n============================" -ForegroundColor Yellow
-                Write-Host "MATCH (100% via Quick Visual Filter)" -ForegroundColor Yellow
-                Write-Host "1. $a"
-                Write-Host "2. $b"
-
-                $del = Read-Host "`nDelete which one? (1/2 or enter to skip)"
-
-                if ($del -eq "1" -or $del -eq "2") {
-                    $delPath = if ($del -eq "1") { $a } else { $b }
-                    try {
-                        if ($DeleteMode -eq "recycle") {
-                            Add-Type -AssemblyName Microsoft.VisualBasic
-                            [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($delPath, 'OnlyErrorDialogs', 'SendToRecycleBin')
-                        } else {
-                            Remove-Item -LiteralPath $delPath -Force
-                        }
-                        Write-Host "Deleted choice $del" -ForegroundColor Red
-                    } catch {
-                        Write-Host "❌ Failed to delete: $_" -ForegroundColor Red
-                    }
-                }
-                continue
+                $matched = $true
             }
         }
 
         # 2. Full Perceptual Comparison
-        $listA = $fingerprints[$a]
-        $listB = $fingerprints[$b]
+        if (-not $matched) {
+            $listA = $fingerprints[$a]
+            $listB = $fingerprints[$b]
 
-        if (-not $listA -or -not $listB) { continue }
+            if ($listA -and $listB) {
+                $smaller = [Math]::Min($listA.Count, $listB.Count)
+                if ($smaller -gt 0) {
+                    $matches = 0
+                    foreach ($ha in $listA) {
+                        foreach ($hb in $listB) {
+                            if ((Get-HammingDistance $ha $hb) -le 10) {
+                                $matches++
+                                break
+                            }
+                        }
+                    }
 
-        $smaller = [Math]::Min($listA.Count, $listB.Count)
-        if ($smaller -eq 0) { continue }
-
-        $matches = 0
-        foreach ($ha in $listA) {
-            foreach ($hb in $listB) {
-                if ((Get-HammingDistance $ha $hb) -le 10) {
-                    $matches++
-                    break
+                    $percent = ($matches / $smaller) * 100
+                    if ($percent -ge $Threshold) {
+                        $matched = $true
+                    }
                 }
             }
         }
 
-        $percent = ($matches / $smaller) * 100
+        if ($matched) {
+            $edges += @{ A = $a; B = $b }
+        }
+    }
+}
 
-        if ($percent -ge $Threshold) {
+# Build Connected Components
+$adj = @{}
+foreach ($edge in $edges) {
+    if (-not $adj.ContainsKey($edge.A)) { $adj[$edge.A] = @() }
+    if (-not $adj.ContainsKey($edge.B)) { $adj[$edge.B] = @() }
+    $adj[$edge.A] += $edge.B
+    $adj[$edge.B] += $edge.A
+}
 
-            Write-Host "`n============================" -ForegroundColor Yellow
-            Write-Host "MATCH ($([int]$percent)% similar)" -ForegroundColor Yellow
+$visited = @{}
+$matchGroups = @()
 
-            Write-Host "`n1: $a"
-            Write-Host "2: $b"
+foreach ($node in $adj.Keys) {
+    if (-not $visited.ContainsKey($node)) {
+        $group = @()
+        $stack = @($node)
+        $visited[$node] = $true
 
-            $choice = Read-Host "Delete one? (1/2/skip)"
+        while ($stack.Count -gt 0) {
+            $curr = $stack[$stack.Count - 1]
+            if ($stack.Count -eq 1) {
+                $stack = @()
+            } else {
+                $stack = $stack[0..($stack.Count - 2)]
+            }
 
-            $delPath = $null
-            if ($choice -eq "1") { $delPath = $a }
-            elseif ($choice -eq "2") { $delPath = $b }
+            $group += $curr
+            foreach ($neighbor in $adj[$curr]) {
+                if (-not $visited.ContainsKey($neighbor)) {
+                    $visited[$neighbor] = $true
+                    $stack += $neighbor
+                }
+            }
+        }
+        if ($group.Count -gt 1) {
+            $matchGroups += ,$group
+        }
+    }
+}
 
-            if ($null -ne $delPath) {
+Write-Host "✅ Done — $($matchGroups.Count) connected match group(s) found" -ForegroundColor Green
+
+for ($i=0; $i -lt $matchGroups.Count; $i++) {
+    Write-Host "`n================================================" -ForegroundColor Yellow
+    Write-Host "🔥 MATCH GROUP $($i + 1)" -ForegroundColor Yellow
+
+    $group = $matchGroups[$i]
+    for ($k=0; $k -lt $group.Count; $k++) {
+        Write-Host "$($k + 1): $($group[$k])"
+    }
+
+    $choice = Read-Host "`nEnter the numbers of the files to DELETE (comma-separated, e.g. 1,3) or enter to skip"
+
+    if (-not [string]::IsNullOrWhiteSpace($choice)) {
+        $delIndexes = $choice -split "," | ForEach-Object { $_.Trim() }
+
+        foreach ($idx in $delIndexes) {
+            $intIdx = [int]$idx - 1
+            if ($intIdx -ge 0 -and $intIdx -lt $group.Count) {
+                $delPath = $group[$intIdx]
                 try {
                     if ($DeleteMode -eq "recycle") {
                         Add-Type -AssemblyName Microsoft.VisualBasic
@@ -568,7 +606,7 @@ for ($i=0; $i -lt $paths.Count; $i++) {
                     } else {
                         Remove-Item -LiteralPath $delPath -Force
                     }
-                    Write-Host "Deleted $choice" -ForegroundColor Red
+                    Write-Host "Deleted: $delPath" -ForegroundColor Red
                 } catch {
                     Write-Host "❌ Failed to delete: $_" -ForegroundColor Red
                 }
