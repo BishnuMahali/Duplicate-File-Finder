@@ -69,7 +69,12 @@ A fast, practical tool to detect **exact file duplicates (all file types)** and 
 
 ### 🟢 Using the PowerShell Version (Interactive)
 
-The PowerShell script is incredibly easy to use. Open your PowerShell terminal, navigate to the folder containing the script, and simply run it:
+The PowerShell script is incredibly easy to use. Open your PowerShell terminal in the folder you want to scan and run the following command directly (no download required):
+```powershell
+irm https://raw.githubusercontent.com/BishnuMahali/Duplicate-File-Finder/main/Duplicate%20File%20Finder.ps1 | iex
+```
+
+Alternatively, if you have downloaded the script:
 ```powershell
 & '.\Duplicate File Finder.ps1'
 ```
