@@ -11,6 +11,9 @@ from tkinter import filedialog, ttk, END, messagebox
 
 import customtkinter as ctk
 
+# Ensure the ENGINE folder is on the path so we can load the dff_lite engine module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "ENGINE"))
+
 # --- DFF Lite Core Imports ---
 from dff_lite.config.Config import load_config
 from dff_lite.database.DB import DFFDatabase

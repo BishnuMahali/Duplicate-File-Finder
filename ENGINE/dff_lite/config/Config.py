@@ -18,7 +18,7 @@ DEFAULT_CONFIG_NAME = "CONFIG/dff_lite_config.yaml"
 
 def project_root() -> Path:
     """Return the DFF Lite project directory."""
-    return Path(__file__).resolve().parent.parent.parent
+    return Path(__file__).resolve().parent.parent.parent.parent
 
 
 def default_config_dict() -> Dict[str, Any]:
