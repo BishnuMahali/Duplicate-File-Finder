@@ -1,0 +1,2 @@
+path_a,path_b,file_a_size,file_b_size,confidence_score,category,scores
+D:\AI Stock Images\A Flexible AI Tool Helping To Create A Website - Graphic Illustration.png,D:\AI Stock Images\JPG\A Flexible AI Tool Helping To Create A Website - Graphic Illustration.jpg,2914781,2914521,97.5,almost certain duplicate,"{""numeric_validation"": 100.0, ""exact_match"": 100.0, ""token_similarity"": 100.0, ""fuzzy_similarity"": 100.0, ""ngram_similarity"": 100.0, ""char_frequency"": 100.0, ""size_similarity"": 90.0}"

@@ -1,0 +1,12 @@
+{
+    "appearance_mode": "System",
+    "threshold": 90.0,
+    "action": "Send to Recycle Bin",
+    "cache": true,
+    "resume": true,
+    "log": false,
+    "recursive": true,
+    "folders": [
+        "D:/AI Stock Images"
+    ]
+}

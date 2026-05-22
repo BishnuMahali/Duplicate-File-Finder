@@ -1,0 +1,61 @@
+# DFF-Lite Configuration YAML
+# See implementation details and customization instructions in README.md.
+
+scan:
+  include_extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".avi"
+    - ".mov"
+    - ".wmv"
+    - ".mp3"
+    - ".flac"
+    - ".wav"
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".txt"
+    - ".pdf"
+  exclude_folders:
+    - ".git"
+    - ".antigravitycli"
+    - "LOGS"
+    - "SNAPSHOT"
+    - "test_workspace"
+    - "node_modules"
+    - "venv"
+    - ".venv"
+  multithreading: true
+  max_workers: 4
+
+normalization:
+  lowercase: true
+  remove_punctuation: true
+  replace_separators: true
+  # Words/tags to strip from filenames aggressively
+  remove_patterns:
+    - '\b(1080p|720p|2160p|4k|8k|480p|360p)\b'
+    - '\b(h264|h265|x264|x265|hevc|avc|divx|xvid)\b'
+    - '\b(bluray|webrip|web-dl|dvdrip|brrip|bdrip|hdtv)\b'
+    - '\b(aac|mp3|dts|dd5\.1|ac3|atmos|truehd)\b'
+    - '\b(hdr|dv|hdr10|hdr10plus|dolby\s*vision)\b'
+    - '\b(rarbg|yify|sparks|amiable|proper|repack|extended|remastered|directors\s*cut)\b'
+
+weights:
+  exact_match: 40
+  token_similarity: 20
+  fuzzy_similarity: 15
+  ngram_similarity: 10
+  char_frequency: 5
+  size_similarity: 5
+  numeric_validation: 5
+
+thresholds:
+  almost_certain: 95
+  highly_likely: 80
+  potential: 60
+  weak: 40
+
+database:
+  db_path: "dff_lite.db"
+  use_cache: true

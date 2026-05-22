@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dff-lite"
+version = "1.0.0"
+description = "⚡ DFF-Lite: Extremely Advanced Filename-Based Duplicate Detection Utility"
+readme = "README.md"
+authors = [
+    { name = "Bishnu Mahali", email = "mrpap@example.com" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Utilities"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "rapidfuzz>=3.0.0",
+    "regex>=2023.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "polars>=0.18.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0.0"
+]
+
+[project.optional-dependencies]
+ai = [
+    "sentence-transformers>=2.2.0"
+]
+
+[project.scripts]
+dff-lite = "DFF-Lite:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dff_lite*"]
