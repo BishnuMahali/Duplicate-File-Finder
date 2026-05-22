@@ -13,7 +13,7 @@ from dff_lite.core.Models import AppConfig
 
 logger = logging.getLogger("dff_lite.config")
 
-DEFAULT_CONFIG_NAME = "dff_lite_config.yaml"
+DEFAULT_CONFIG_NAME = "CONFIG/dff_lite_config.yaml"
 
 
 def project_root() -> Path:

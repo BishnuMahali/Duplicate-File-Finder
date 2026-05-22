@@ -99,7 +99,7 @@ class BlockingConfig(BaseModel):
 
 
 class DatabaseConfig(BaseModel):
-    db_path: str = "dff_lite.db"
+    db_path: str = "TEMP/dff_lite.db"
     use_cache: bool = True
 
 

@@ -105,7 +105,7 @@ class DFFLiteEngine:
             self.callbacks.get("stats_update")("wasted", format_size(wasted))
             
             if matches:
-                out_csv = Path("DFF_Lite_Matches.csv")
+                out_csv = Path("TEMP/DFF_Lite_Matches.csv")
                 export_to_csv(matches, out_csv)
                 self.log(f"Results have been exported to: {out_csv.name}")
             
@@ -125,7 +125,7 @@ class DFFLiteGUI(ctk.CTk):
         self.title("DFF-Lite: Advanced Duplicate File Finder PRO")
         self.geometry("1400x900")
         self.minsize(1000, 700)
-        self.settings_file = "dff_ui_settings.json"
+        self.settings_file = "CONFIG/dff_ui_settings.json"
         self.selected_folders = []
         self.is_running = False
         
