@@ -20,17 +20,17 @@ import send2trash
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "ENGINE"))
 import Duplicate_File_Finder as ProBackend
 
-# --- Tokyo Night Color Theme Constants ---
-BG_MAIN = "#1a1b26"       # Deep slate blue
-BG_PANEL = "#16161e"      # Darker panel background
-BG_CARD = "#1f2335"       # Slate gray for cards/inputs
-TEXT_MAIN = "#a9b1d6"     # Soft light gray primary text
-TEXT_SUB = "#565f89"      # Darker gray for headers/labels
-ACCENT_BLUE = "#7aa2f7"   # Electric blue highlight
-ACCENT_CYAN = "#7dcfff"   # Vibrant cyan
-ACCENT_GREEN = "#9ece6a"  # Emerald green (success/keep)
-ACCENT_RED = "#f7768e"    # Coral red (delete/danger)
-ACCENT_YELLOW = "#e0af68" # Soft gold/wasted space
+# --- Restored CustomTkinter Theme Mappings (matching DFF Lite) ---
+BG_MAIN = ("gray95", "gray10")
+BG_PANEL = ("gray90", "gray15")
+BG_CARD = ("gray85", "gray20")
+TEXT_MAIN = ("gray10", "gray90")
+TEXT_SUB = "gray"
+ACCENT_BLUE = ("#2da44e", "#2da44e")  # Electric green accent matching the green theme!
+ACCENT_CYAN = ("#1a7f37", "#1a7f37")  # Hover green accent
+ACCENT_GREEN = ("#2da44e", "#2da44e") # Success green
+ACCENT_RED = ("#cf222e", "#cf222e")   # Halt/delete red
+ACCENT_YELLOW = ("#e0af68", "#e0af68")# Soft gold/warning
 
 class MatchResult:
     def __init__(self, path_a, path_b, file_a_size, file_b_size, confidence_score):
@@ -50,8 +50,8 @@ def bootstrap():
 
 bootstrap()
 
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("green")
 
 def format_size(size_bytes):
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -310,7 +310,6 @@ class DFFProGUI(ctk.CTk):
         self.title("Duplicate File Finder PRO — Unified Suite")
         self.geometry("1400x900")
         self.minsize(1050, 750)
-        self.configure(fg_color=BG_MAIN)
         self.settings_file = "CONFIG/dff_pro_ui_settings.json"
         self.selected_folders = []
         self.is_running = False
@@ -472,14 +471,8 @@ class DFFProGUI(ctk.CTk):
         self.grid_frame.grid_rowconfigure(0, weight=1)
         
         # Treeview Custom Styling
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("Treeview", background=BG_PANEL, foreground=TEXT_MAIN, rowheight=28, fieldbackground=BG_PANEL, borderwidth=0)
-        style.map("Treeview", background=[("selected", "#2e3c64")], foreground=[("selected", "white")])
-        style.configure("Treeview.Heading", background=BG_CARD, foreground=ACCENT_BLUE, font=('Segoe UI', 10, 'bold'), borderwidth=1)
-        
         self.tree = ttk.Treeview(self.grid_frame, columns=("Select", "Group", "Filename", "Size", "Path", "Confidence"), show="headings")
-        self.tree.tag_configure("selected_row", background="#4a2c3a", foreground=ACCENT_RED)
+        self.update_treeview_style()
         
         self.tree.heading("Select", text="☐", command=self.toggle_all)
         self.tree.heading("Group", text="Group")
@@ -600,6 +593,37 @@ class DFFProGUI(ctk.CTk):
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
         ctk.set_appearance_mode(new_appearance_mode)
+        self.update_treeview_style(new_appearance_mode)
+
+    def update_treeview_style(self, mode=None):
+        if mode is None or mode == "System":
+            mode = ctk.get_appearance_mode()
+        
+        style = ttk.Style()
+        style.theme_use("default")
+        if mode == "Dark":
+            bg = "#2b2b2b"
+            fg = "white"
+            head_bg = "#1f1f1f"
+            head_fg = "white"
+            sel_bg = "#2da44e"  # Matches our beautiful green color theme!
+            tag_bg = "#542828"
+            tag_fg = "#ffb3b3"
+        else:
+            bg = "#ebebeb"
+            fg = "black"
+            head_bg = "#dbdbdb"
+            head_fg = "black"
+            sel_bg = "#2da44e"
+            tag_bg = "#ffcccc"
+            tag_fg = "#900000"
+            
+        style.configure("Treeview", background=bg, foreground=fg, rowheight=28, fieldbackground=bg, borderwidth=0)
+        style.map("Treeview", background=[("selected", sel_bg)], foreground=[("selected", "white")])
+        style.configure("Treeview.Heading", background=head_bg, foreground=head_fg, font=('Segoe UI', 10, 'bold'), borderwidth=1)
+        
+        if hasattr(self, "tree"):
+            self.tree.tag_configure("selected_row", background=tag_bg, foreground=tag_fg)
         
     def add_folder(self):
         folder = filedialog.askdirectory(title="Add Library to Analyze")
@@ -666,6 +690,8 @@ class DFFProGUI(ctk.CTk):
 
     def stop_execution(self):
         if self.is_running:
+            self.write_console("[SYSTEM] Halt requested. Stopping scan...")
+            self.set_status("Halting...")
             self.engine.request_stop()
             self.btn_stop.configure(state="disabled")
 
