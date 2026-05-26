@@ -538,6 +538,7 @@ def main():
         parser.add_argument("--skip-duration-filter", action="store_true", help="Skips duration filtering to find edited lengths")
         parser.add_argument("--skip-quick-signatures", action="store_true", help="Skips the fast visual quick signature match")
         parser.add_argument("--extract-more-frames", action="store_true", help="Extracts 1fps/5s instead of 10s for higher accuracy on re-encodes")
+        parser.add_argument("--non-interactive", action="store_true", help="Run without interactive prompts")
         args = parser.parse_args()
 
     # Prompt for GPU mode if in video mode and we want to prompt
@@ -759,6 +760,11 @@ def main():
     print("═" * 60)
     print(f"✅ Done — {len(match_groups)} connected match group(s) found")
     print("═" * 60)
+
+    if getattr(args, "non_interactive", False):
+        for i, group in enumerate(match_groups, 1):
+            print(f"MATCH_GROUP_{i}:" + ",".join(str(f) for f in group))
+        sys.exit(0)
 
     if len(sys.argv) == 1:
         show_results_gui(match_groups, lambda paths: delete_files(paths, args.delete_mode))
